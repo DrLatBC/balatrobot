@@ -12,6 +12,7 @@
 ---@field hands integer? New number of hands left number
 ---@field discards integer? New number of discards left number
 ---@field shop boolean? Re-stock shop with new items
+---@field blind string? Boss blind key (e.g. "bl_flint") -- sets the upcoming boss blind
 
 -- ==========================================================================
 -- Set Endpoint
@@ -60,6 +61,11 @@ return {
       required = false,
       description = "Re-stock shop with new items",
     },
+    blind = {
+      type = "string",
+      required = false,
+      description = "Boss blind key (e.g. 'bl_flint') -- sets the upcoming boss blind",
+    },
   },
 
   requires_state = nil,
@@ -87,6 +93,7 @@ return {
       and args.hands == nil
       and args.discards == nil
       and args.shop == nil
+      and args.blind == nil
     then
       send_response({
         message = "Must provide at least one field to set",
@@ -165,6 +172,47 @@ return {
         return
       end
       G.GAME.current_round.discards_left = args.discards
+    end
+
+    -- Set boss blind
+    if args.blind then
+      if not G.P_BLINDS[args.blind] then
+        send_response({
+          message = "Unknown blind key: " .. tostring(args.blind),
+          name = BB_ERROR_NAMES.BAD_REQUEST,
+        })
+        return
+      end
+      G.GAME.round_resets.blind_choices.Boss = args.blind
+      G.RESET_BLIND_STATES = true
+
+      -- Rebuild the boss blind UIBox so select_blind picks up the new blind.
+      -- Mirrors the logic in G.FUNCS.reroll_boss (button_callbacks.lua).
+      if G.blind_select_opts and G.blind_select_opts.boss then
+        local par = G.blind_select_opts.boss.parent
+        G.blind_select_opts.boss:remove()
+        G.blind_select_opts.boss = UIBox{
+          T = {par.T.x, 0, 0, 0},
+          definition =
+            {n=G.UIT.ROOT, config={align = "cm", colour = G.C.CLEAR}, nodes={
+              UIBox_dyn_container(
+                {create_UIBox_blind_choice('Boss')},
+                false,
+                get_blind_main_colour('Boss'),
+                mix_colours(G.C.BLACK, get_blind_main_colour('Boss'), 0.8)
+              )
+            }},
+          config = {align="bmi",
+                    offset = {x=0, y=G.ROOM.T.y + 9},
+                    major = par,
+                    xy_bond = 'Weak'
+                  }
+        }
+        par.config.object = G.blind_select_opts.boss
+        par.config.object:recalculate()
+        G.blind_select_opts.boss.parent = par
+        G.blind_select_opts.boss.alignment.offset.y = 0
+      end
     end
 
     if args.shop then
