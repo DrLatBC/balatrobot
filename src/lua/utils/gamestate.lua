@@ -232,14 +232,85 @@ local function extract_card_modifier(card)
     modifier.seal = string.upper(card.seal)
   end
 
-  -- Edition (table with type/key)
-  if card.edition and card.edition.type then
-    modifier.edition = string.upper(card.edition.type)
+  -- Edition: use the card's own scoring methods for reliable detection.
+  -- card:get_chip_mult() returns the holo mult, get_chip_bonus() includes foil chips,
+  -- get_chip_x_mult() returns polychrome xmult. These work regardless of how
+  -- the edition table is structured internally.
+  if card.edition then
+    -- Type string for identification
+    if card.edition.type then
+      modifier.edition = string.upper(card.edition.type)
+    elseif card.edition.holo then
+      modifier.edition = "HOLO"
+    elseif card.edition.foil then
+      modifier.edition = "FOIL"
+    elseif card.edition.polychrome then
+      modifier.edition = "POLYCHROME"
+    elseif card.edition.negative then
+      modifier.edition = "NEGATIVE"
+    elseif card.edition.key then
+      -- SMODS: edition.key = "e_holo" / "e_foil" / "e_polychrome" / "e_negative"
+      local etype = card.edition.key:gsub("^e_", "")
+      modifier.edition = string.upper(etype)
+    end
+
+    -- Numeric scoring values
+    if card.edition.mult and card.edition.mult ~= 0 then
+      modifier.edition_mult = card.edition.mult
+    end
+    if card.edition.chips and card.edition.chips ~= 0 then
+      modifier.edition_chips = card.edition.chips
+    end
+    -- Use get_edition() for x_mult: the raw card.edition.x_mult can be
+    -- contaminated by enhancement values (Glass x2 overwrites Polychrome x1.5).
+    -- get_edition() returns the correct edition-only value.
+    if card.get_edition then
+      local ok, ed = pcall(function() return card:get_edition() end)
+      if ok and ed and ed.x_mult_mod and ed.x_mult_mod ~= 0 then
+        modifier.edition_x_mult = ed.x_mult_mod
+      end
+    elseif card.edition.x_mult and card.edition.x_mult ~= 0 then
+      modifier.edition_x_mult = card.edition.x_mult
+    end
+  end
+  -- Fallback: use card scoring methods directly (catches editions not in card.edition table)
+  -- Skip if the card has a MULT or LUCKY enhancement — get_chip_mult() includes
+  -- enhancement mult, which would create a phantom HOLO edition.
+  local has_mult_enhancement = card.ability and card.ability.effect
+    and (card.ability.effect == "Mult Card" or card.ability.effect == "Lucky Card")
+  if not modifier.edition and card.get_chip_mult and not has_mult_enhancement then
+    local ok, emult = pcall(function() return card:get_chip_mult() end)
+    if ok and emult and emult > 0 then
+      modifier.edition = "HOLO"
+      modifier.edition_mult = emult
+    end
+  end
+  -- Note: removed get_chip_x_mult() fallback here — it returns the enhancement
+  -- x_mult (Glass 2.0), not the edition x_mult (Polychrome 1.5). Edition detection
+  -- via get_edition() above is now the primary path.
+  if not modifier.edition_chips and card.get_chip_bonus then
+    -- get_chip_bonus includes base nominal + ability.bonus + perma_bonus + edition chips
+    -- We already handle perma_bonus separately, so only check for foil-level chips
+    local ok, echips = pcall(function() return card:get_chip_bonus() end)
+    if ok and echips then
+      local base_nominal = (card.base and card.base.nominal) or 0
+      local ability_bonus = (card.ability and card.ability.bonus) or 0
+      local perma = (card.ability and card.ability.perma_bonus) or 0
+      local edition_chips = echips - base_nominal - ability_bonus - perma
+      if edition_chips > 0 then
+        modifier.edition = modifier.edition or "FOIL"
+        modifier.edition_chips = edition_chips
+      end
+    end
   end
 
   -- Enhancement (from ability.name for enhanced cards)
   if card.ability and card.ability.effect and card.ability.effect ~= "Base" then
     modifier.enhancement = string.upper(card.ability.effect:gsub(" Card", ""))
+    -- Expose enhancement x_mult separately (Glass = 2.0)
+    if card.ability.x_mult and card.ability.x_mult ~= 1 then
+      modifier.enhancement_x_mult = card.ability.x_mult
+    end
   end
 
   -- Eternal (boolean from ability)
@@ -278,6 +349,50 @@ local function extract_card_value(card)
 
   -- Effect description (for all cards)
   value.effect = get_card_ui_description(card)
+
+  -- Permanent chip bonus (from Hiker etc.) — only for playing cards
+  if card.ability then
+    if card.ability.perma_bonus and card.ability.perma_bonus ~= 0 then
+      value.perma_bonus = card.ability.perma_bonus
+    end
+  end
+
+  -- Joker rarity (1=Common, 2=Uncommon, 3=Rare, 4=Legendary)
+  if card.config and card.config.center and card.config.center.rarity then
+    value.rarity = card.config.center.rarity
+  end
+
+  -- Joker ability data: expose actual scoring values instead of requiring
+  -- text parsing. Includes accumulated values for scaling jokers.
+  if card.ability then
+    local ab = {}
+    -- extra: varies by joker — can be number or table with chips/mult/Xmult/etc.
+    if card.ability.extra ~= nil then
+      if type(card.ability.extra) == "table" then
+        -- Shallow copy the table
+        for k, v in pairs(card.ability.extra) do
+          if type(v) ~= "table" and type(v) ~= "function" then
+            ab[k] = v
+          end
+        end
+      else
+        ab.extra = card.ability.extra
+      end
+    end
+    -- Config-level scoring fields (hand-type jokers like Jolly, Sly, etc.)
+    if card.ability.t_mult and card.ability.t_mult ~= 0 then ab.t_mult = card.ability.t_mult end
+    if card.ability.t_chips and card.ability.t_chips ~= 0 then ab.t_chips = card.ability.t_chips end
+    if card.ability.mult and card.ability.mult ~= 0 then ab.mult = card.ability.mult end
+    if card.ability.x_mult and card.ability.x_mult ~= 0 then ab.x_mult = card.ability.x_mult end
+    -- Driver's License enhanced card count
+    if card.ability.driver_tally then ab.driver_tally = card.ability.driver_tally end
+    -- Loyalty Card: remaining hands until trigger
+    if card.ability.loyalty_remaining ~= nil then ab.loyalty_remaining = card.ability.loyalty_remaining end
+    -- Only include if non-empty
+    if next(ab) ~= nil then
+      value.ability = ab
+    end
+  end
 
   return value
 end
