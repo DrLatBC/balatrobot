@@ -468,6 +468,18 @@ local function extract_round_info()
     round.chips = G.GAME.chips
   end
 
+  -- The Ox: which hand type triggers money loss
+  if G.GAME.current_round.most_played_poker_hand then
+    round.most_played_poker_hand = G.GAME.current_round.most_played_poker_hand
+  end
+
+  -- Ancient Joker's current rotating suit
+  if G.GAME.current_round.ancient_card and G.GAME.current_round.ancient_card.suit then
+    local suit = G.GAME.current_round.ancient_card.suit
+    local suit_map = { Hearts = "H", Diamonds = "D", Clubs = "C", Spades = "S" }
+    round.ancient_suit = suit_map[suit] or suit
+  end
+
   return round
 end
 
