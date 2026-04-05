@@ -73,6 +73,9 @@ local love_update = love.update
 love.update = function(dt) ---@diagnostic disable-line: duplicate-set-field
   -- Check for GAME_OVER before game logic runs
   BB_GAMESTATE.check_game_over()
+  -- Dismiss win overlay when paused — event handlers can't run while paused,
+  -- so we do it here in love.update which always runs
+  BB_GAMESTATE.check_win_overlay()
   love_update(dt)
   BB_SERVER.update(BB_DISPATCHER)
 end

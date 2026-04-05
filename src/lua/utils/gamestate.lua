@@ -1061,6 +1061,14 @@ end
 -- normal event-based detection from working.
 gamestate.on_game_over = nil
 
+-- Tracks whether we've already dismissed the win overlay for endless mode.
+-- The dismissal happens in love.update (check_win_overlay) because the
+-- overlay sets G.SETTINGS.paused=true which blocks event processing.
+-- Two-phase: dismiss first, then confirm removal on a later frame so the
+-- game has time to fully process the overlay removal before the bot resumes.
+gamestate.win_overlay_dismissed = false
+gamestate.win_overlay_dismissing = false
+
 ---Check and trigger GAME_OVER callback if state is GAME_OVER
 ---Called from love.update before game logic runs
 function gamestate.check_game_over()
@@ -1068,6 +1076,29 @@ function gamestate.check_game_over()
     gamestate.on_game_over(gamestate.get_gamestate())
     gamestate.on_game_over = nil
   end
+end
+
+---Auto-dismiss the "YOU WIN" overlay to continue into endless mode.
+---Called from love.update so it works even when the game is paused.
+---Two-phase: first frame dismisses the overlay, subsequent frame confirms
+---it's gone before setting win_overlay_dismissed (which unblocks play.lua).
+function gamestate.check_win_overlay()
+  if gamestate.win_overlay_dismissed then return end
+  if not G.GAME or not G.GAME.won then return end
+
+  -- Phase 2: overlay was dismissed on a previous frame, confirm it's gone
+  if gamestate.win_overlay_dismissing then
+    if not G.OVERLAY_MENU then
+      gamestate.win_overlay_dismissed = true
+    end
+    return
+  end
+
+  -- Phase 1: overlay is visible, dismiss it now
+  if not G.OVERLAY_MENU then return end
+  G.FUNCS.exit_overlay_menu()
+  gamestate.on_game_over = nil
+  gamestate.win_overlay_dismissing = true
 end
 
 return gamestate
