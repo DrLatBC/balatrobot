@@ -642,6 +642,88 @@ local function get_blind_effect_from_ui(blind_config)
   return table.concat(effect_parts, " ")
 end
 
+---Strips Balatro color codes from text
+---Color codes are in format {C:color}text{} or {X:color}text{}
+---@param text string The text with color codes
+---@return string clean_text The text without color codes
+local function strip_color_codes(text)
+  if not text then
+    return ""
+  end
+  -- Remove color codes: {C:color_name}, {X:mult}, etc. and closing {}
+  return text:gsub("%b{}", ""):gsub("%s+", " "):gsub("^%s+", ""):gsub("%s+$", "")
+end
+
+---Gets voucher effect description using the game's localize function
+---Uses the same approach as generate_card_ui() in common_events.lua
+---@param voucher_key string The voucher key (e.g., "v_overstock_norm")
+---@return string effect The effect description
+local function get_voucher_effect(voucher_key)
+  if not voucher_key then
+    return ""
+  end
+
+  -- Get voucher config from G.P_CENTERS
+  local center = G.P_CENTERS and G.P_CENTERS[voucher_key]
+  if not center then
+    return ""
+  end
+
+  -- Build loc_vars based on voucher name (mirrors common_events.lua:2559-2576)
+  local loc_vars = {}
+  local name = center.name
+
+  if name == "Overstock" or name == "Overstock Plus" then
+    -- No vars needed
+  elseif name == "Tarot Merchant" or name == "Tarot Tycoon" then
+    loc_vars = { center.config.extra_disp }
+  elseif name == "Planet Merchant" or name == "Planet Tycoon" then
+    loc_vars = { center.config.extra_disp }
+  elseif name == "Hone" or name == "Glow Up" then
+    loc_vars = { center.config.extra }
+  elseif name == "Reroll Surplus" or name == "Reroll Glut" then
+    loc_vars = { center.config.extra }
+  elseif name == "Grabber" or name == "Nacho Tong" then
+    loc_vars = { center.config.extra }
+  elseif name == "Wasteful" or name == "Recyclomancy" then
+    loc_vars = { center.config.extra }
+  elseif name == "Seed Money" or name == "Money Tree" then
+    loc_vars = { center.config.extra / 5 }
+  elseif name == "Blank" or name == "Antimatter" then
+    -- No vars needed
+  elseif name == "Hieroglyph" or name == "Petroglyph" then
+    loc_vars = { center.config.extra }
+  elseif name == "Director's Cut" or name == "Retcon" then
+    loc_vars = { center.config.extra }
+  elseif name == "Paint Brush" or name == "Palette" then
+    loc_vars = { center.config.extra }
+  elseif name == "Telescope" or name == "Observatory" then
+    loc_vars = { center.config.extra }
+  elseif name == "Clearance Sale" or name == "Liquidation" then
+    loc_vars = { center.config.extra }
+  end
+
+  -- Use localize to get description text
+  if not localize then ---@diagnostic disable-line: undefined-global
+    return ""
+  end
+
+  local text_lines = localize({ ---@diagnostic disable-line: undefined-global
+    type = "raw_descriptions",
+    key = voucher_key,
+    set = "Voucher",
+    vars = loc_vars,
+  })
+
+  if not text_lines or type(text_lines) ~= "table" then
+    return ""
+  end
+
+  -- Concatenate and strip color codes
+  local text = table.concat(text_lines, " ")
+  return strip_color_codes(text)
+end
+
 ---Gets tag information using localize function (same approach as Tag:set_text)
 ---@param tag_key string The tag key from G.P_TAGS
 ---@return table tag_info {name: string, effect: string}
@@ -697,6 +779,29 @@ local function get_tag_info(tag_key)
   return result
 end
 
+---Gets all owned tags from G.GAME.tags
+---@return Tag[] tags Array of Tag objects
+local function get_owned_tags()
+  local tags = {}
+
+  if not G or not G.GAME or not G.GAME.tags then
+    return tags
+  end
+
+  for _, tag in pairs(G.GAME.tags) do
+    if tag and tag.key then
+      local tag_info = get_tag_info(tag.key)
+      table.insert(tags, {
+        key = tag.key,
+        name = tag_info.name,
+        effect = tag_info.effect,
+      })
+    end
+  end
+
+  return tags
+end
+
 ---Converts game blind status to uppercase enum
 ---@param status string Game status (e.g., "Defeated", "Current", "Select")
 ---@return string uppercase_status Uppercase status enum (e.g., "DEFEATED", "CURRENT", "SELECT")
@@ -727,8 +832,7 @@ function gamestate.get_blinds_info()
       name = "",
       effect = "",
       score = 0,
-      tag_name = "",
-      tag_effect = "",
+      tag = nil, --[[@type Tag?]]
     },
     big = {
       type = "BIG",
@@ -736,8 +840,7 @@ function gamestate.get_blinds_info()
       name = "",
       effect = "",
       score = 0,
-      tag_name = "",
-      tag_effect = "",
+      tag = nil, --[[@type Tag?]]
     },
     boss = {
       type = "BOSS",
@@ -745,8 +848,7 @@ function gamestate.get_blinds_info()
       name = "",
       effect = "",
       score = 0,
-      tag_name = "",
-      tag_effect = "",
+      tag = nil, --[[@type Tag?]]
     },
   }
 
@@ -784,8 +886,11 @@ function gamestate.get_blinds_info()
     local small_tag_key = G.GAME.round_resets.blind_tags and G.GAME.round_resets.blind_tags.Small
     if small_tag_key then
       local tag_info = get_tag_info(small_tag_key)
-      blinds.small.tag_name = tag_info.name
-      blinds.small.tag_effect = tag_info.effect
+      blinds.small.tag = {
+        key = small_tag_key,
+        name = tag_info.name,
+        effect = tag_info.effect,
+      }
     end
   end
 
@@ -808,8 +913,11 @@ function gamestate.get_blinds_info()
     local big_tag_key = G.GAME.round_resets.blind_tags and G.GAME.round_resets.blind_tags.Big
     if big_tag_key then
       local tag_info = get_tag_info(big_tag_key)
-      blinds.big.tag_name = tag_info.name
-      blinds.big.tag_effect = tag_info.effect
+      blinds.big.tag = {
+        key = big_tag_key,
+        name = tag_info.name,
+        effect = tag_info.effect,
+      }
     end
   end
 
@@ -833,7 +941,7 @@ function gamestate.get_blinds_info()
     blinds.boss.score = math.floor(base_amount * 2 * ante_scaling)
   end
 
-  -- Boss blind has no tags (tag_name and tag_effect remain empty strings)
+  -- Boss blind has no tags (tag remains nil)
 
   return blinds
 end
@@ -884,14 +992,16 @@ function gamestate.get_gamestate()
     -- Used vouchers (table<string, string>)
     if G.GAME.used_vouchers then
       local used_vouchers = {}
-      for voucher_name, voucher_data in pairs(G.GAME.used_vouchers) do
-        if type(voucher_data) == "table" and voucher_data.description then
-          used_vouchers[voucher_name] = voucher_data.description
-        else
-          used_vouchers[voucher_name] = ""
-        end
+      for voucher_name, _ in pairs(G.GAME.used_vouchers) do
+        used_vouchers[voucher_name] = get_voucher_effect(voucher_name)
       end
       state_data.used_vouchers = used_vouchers
+    end
+
+    -- Owned tags (Tag[])
+    local owned_tags = get_owned_tags()
+    if #owned_tags > 0 then
+      state_data.tags = owned_tags
     end
 
     -- Poker hands
