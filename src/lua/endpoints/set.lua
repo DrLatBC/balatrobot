@@ -12,7 +12,8 @@
 ---@field hands integer? New number of hands left number
 ---@field discards integer? New number of discards left number
 ---@field shop boolean? Re-stock shop with new items
----@field blind string? Boss blind key (e.g. "bl_flint") -- sets the upcoming boss blind
+---@field blind string? Boss blind key (e.g. "bl_flint") — sets the upcoming boss blind
+---@field debuff boolean? Re-apply blind debuffs to all hand cards (useful after add())
 
 -- ==========================================================================
 -- Set Endpoint
@@ -64,7 +65,12 @@ return {
     blind = {
       type = "string",
       required = false,
-      description = "Boss blind key (e.g. 'bl_flint') -- sets the upcoming boss blind",
+      description = "Boss blind key (e.g. 'bl_flint') — sets the upcoming boss blind",
+    },
+    debuff = {
+      type = "boolean",
+      required = false,
+      description = "Re-apply blind debuffs to all hand cards (call after add() during a boss blind)",
     },
   },
 
@@ -94,6 +100,7 @@ return {
       and args.discards == nil
       and args.shop == nil
       and args.blind == nil
+      and args.debuff == nil
     then
       send_response({
         message = "Must provide at least one field to set",
@@ -234,6 +241,23 @@ return {
       G.GAME.current_round.used_packs = nil
       G.STATE_COMPLETE = false
       G:update_shop()
+    end
+
+    -- Re-apply blind debuffs to hand cards
+    if args.debuff then
+      if G.STATE ~= G.STATES.SELECTING_HAND then
+        send_response({
+          message = "Can only apply debuffs in SELECTING_HAND state",
+          name = BB_ERROR_NAMES.NOT_ALLOWED,
+        })
+        return
+      end
+      if G.GAME.blind and G.GAME.blind.debuff_card then
+        for _, card in ipairs(G.hand.cards) do
+          G.GAME.blind:debuff_card(card)
+        end
+        sendDebugMessage("Re-applied blind debuffs to " .. #G.hand.cards .. " hand cards", "BB.ENDPOINTS")
+      end
     end
 
     G.E_MANAGER:add_event(Event({

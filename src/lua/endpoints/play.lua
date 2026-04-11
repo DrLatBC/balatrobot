@@ -48,7 +48,7 @@ return {
 
     if #args.cards > G.hand.config.highlighted_limit then
       send_response({
-        message = "You can only play " .. G.hand.config.highlighted_limit .. " cards. Provide fewer card indices.",
+        message = "You can only play " .. G.hand.config.highlighted_limit .. " cards",
         name = BB_ERROR_NAMES.BAD_REQUEST,
       })
       return

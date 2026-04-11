@@ -25,6 +25,7 @@ BB_ENDPOINTS = {
   "src/lua/endpoints/skip.lua",
   "src/lua/endpoints/select.lua",
   -- Play/discard endpoints
+  "src/lua/endpoints/highlight.lua",
   "src/lua/endpoints/play.lua",
   "src/lua/endpoints/discard.lua",
   -- Cash out endpoint

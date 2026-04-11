@@ -153,10 +153,12 @@ return {
     )
     local ok, err = pcall(G.FUNCS.start_run, nil, run_params)
     if not ok then
+      sendDebugMessage("start_run failed: " .. tostring(err) .. " — retrying after delete_run", "BB.ENDPOINTS")
       -- Clean up stale state and retry
       pcall(function() G:delete_run() end)
       local ok2, err2 = pcall(G.FUNCS.start_run, nil, run_params)
       if not ok2 then
+        sendDebugMessage("start_run retry also failed: " .. tostring(err2), "BB.ENDPOINTS")
         send_response({
           message = "Failed to start run: " .. tostring(err2),
           name = BB_ERROR_NAMES.INTERNAL_ERROR,

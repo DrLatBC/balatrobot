@@ -32,7 +32,7 @@ return {
     },
   },
 
-  requires_state = { G.STATES.SELECTING_HAND, G.STATES.SHOP, G.STATES.SMODS_BOOSTER_OPENED },
+  requires_state = { G.STATES.SELECTING_HAND, G.STATES.SHOP },
 
   ---@param args Request.Endpoint.Sell.Params
   ---@param send_response fun(response: Response.Endpoint)
@@ -53,22 +53,6 @@ return {
         name = BB_ERROR_NAMES.BAD_REQUEST,
       })
       return
-    end
-
-    -- If in SMODS_BOOSTER_OPENED, verify it's a Buffoon pack (contains Jokers)
-    if G.STATE == G.STATES.SMODS_BOOSTER_OPENED then
-      local pack_set = G.pack_cards
-        and G.pack_cards.cards
-        and G.pack_cards.cards[1]
-        and G.pack_cards.cards[1].ability
-        and G.pack_cards.cards[1].ability.set
-      if pack_set ~= "Joker" then
-        send_response({
-          message = "Can only sell jokers when a Buffoon pack is open",
-          name = BB_ERROR_NAMES.NOT_ALLOWED,
-        })
-        return
-      end
     end
 
     -- Determine which type to sell and validate existence
@@ -156,11 +140,7 @@ return {
         local state_stable = G.STATE_COMPLETE == true
 
         -- 4. Still in valid state
-        local valid_state = (
-          G.STATE == G.STATES.SHOP
-          or G.STATE == G.STATES.SELECTING_HAND
-          or G.STATE == G.STATES.SMODS_BOOSTER_OPENED
-        )
+        local valid_state = (G.STATE == G.STATES.SHOP or G.STATE == G.STATES.SELECTING_HAND)
 
         -- Note: card count is NOT checked here — some jokers (e.g. Invisible Joker)
         -- spawn a replacement on sell, leaving count unchanged. card_gone + money_increased
