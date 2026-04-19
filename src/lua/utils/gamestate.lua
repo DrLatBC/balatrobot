@@ -921,6 +921,22 @@ function gamestate.get_gamestate()
     if G.GAME.jackpotts_earnings and G.GAME.jackpotts_earnings.entries then
       state_data.earnings = G.GAME.jackpotts_earnings.entries
     end
+
+    -- Currently held tags (Investment, Handy, Top-up, Speed, Garbage, etc.).
+    -- Each entry: {key, name, ante (acquired)}.
+    if G.GAME.tags and #G.GAME.tags > 0 then
+      local tags_out = {}
+      for _, tag in ipairs(G.GAME.tags) do
+        local t_key = tag.key or ""
+        local t_info = (G.P_TAGS and G.P_TAGS[t_key]) or {}
+        table.insert(tags_out, {
+          key = t_key,
+          name = t_info.name or t_key,
+          ante = tag.ante,
+        })
+      end
+      state_data.tags = tags_out
+    end
   end
 
   -- Always available areas
