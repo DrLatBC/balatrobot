@@ -916,6 +916,11 @@ function gamestate.get_gamestate()
 
     -- Blinds info
     state_data.blinds = gamestate.get_blinds_info()
+
+    -- JackPotts earnings tracker (per-game money attribution)
+    if G.GAME.jackpotts_earnings and G.GAME.jackpotts_earnings.entries then
+      state_data.earnings = G.GAME.jackpotts_earnings.entries
+    end
   end
 
   -- Always available areas

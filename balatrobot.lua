@@ -57,6 +57,8 @@ assert(SMODS.load_file("src/lua/core/dispatcher.lua"))() -- define BB_DISPATCHER
 -- Load gamestate and errors utilities
 BB_GAMESTATE = assert(SMODS.load_file("src/lua/utils/gamestate.lua"))()
 assert(SMODS.load_file("src/lua/utils/errors.lua"))()
+BB_EARNINGS = assert(SMODS.load_file("src/lua/utils/earnings.lua"))()
+BB_EARNINGS.install()
 
 -- Initialize Server
 local server_success = BB_SERVER.init()
