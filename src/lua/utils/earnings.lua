@@ -7,11 +7,17 @@
 ---Hooks three sites:
 ---  1. add_round_eval_row — round-end income (jokers via calc_dollar_bonus,
 ---     tags, interest, hand/discard money, blind reward).
+---     Skips name=='bottom' which is the Balatro round-summary total
+---     (would double-count every other row).
 ---  2. Card:get_p_dollars — per-played-card income (Lucky, Gold seal, Gold
 ---     enhancement) accumulated during scoring.
----  3. card_eval_status_text(card, 'dollars', amt) — mid-round joker
----     triggers (Faceless, Rough Gem, Trading Card, etc.). Filtered to
----     joker-set cards to avoid double-counting #2.
+---  3. Card:calculate_joker + ease_dollars — mid-round joker triggers
+---     (Faceless, Rough Gem, Business, Reserved Parking, etc.). The
+---     calculate_joker wrapper pushes the joker onto a stack before its
+---     effect runs; the ease_dollars wrapper attributes the $ to whatever
+---     joker is on top of the stack. Outside any joker scope, ease_dollars
+---     is ignored (the $ is captured by another path or is non-earnings,
+---     e.g. shop sells/buys, rentals).
 
 local earnings = {}
 
@@ -75,12 +81,15 @@ function earnings.install()
     if earnings._installed then return end
 
     -- 1. add_round_eval_row — round-end income
+    -- Skip name=='bottom' (the round-summary total row that sums all the
+    -- joker/blind/interest/hands rows above it — recording it would
+    -- double-count every other source).
     if type(add_round_eval_row) == "function" then
         local _orig = add_round_eval_row
         add_round_eval_row = function(args) ---@diagnostic disable-line: duplicate-set-field
             args = args or {}
             local dollars = args.dollars or 0
-            if dollars ~= 0 and not args.saved then
+            if dollars ~= 0 and not args.saved and args.name ~= "bottom" then
                 record({
                     source = classify_eval_row(args.name),
                     raw_name = args.name,
@@ -125,22 +134,41 @@ function earnings.install()
         end
     end
 
-    -- 3. card_eval_status_text with eval_type == 'dollars' on jokers —
-    --    mid-round joker-triggered income (Faceless, Rough Gem, Trading
-    --    Card, etc.). Filter to jokers to avoid double-counting #2.
-    if type(card_eval_status_text) == "function" then
-        local _orig = card_eval_status_text
-        card_eval_status_text = function(card, eval_type, amt, percent, dir, extra) ---@diagnostic disable-line: duplicate-set-field
-            if eval_type == "dollars" and amt and amt ~= 0
-                and card and card.ability and card.ability.set == "Joker" then
+    -- 3. Card:calculate_joker + ease_dollars — mid-round joker triggers.
+    --    Faceless, Rough Gem, Business, Reserved Parking, Trading Card,
+    --    To the Moon-style payouts all call ease_dollars() directly inside
+    --    their joker calculate function — they do NOT route through
+    --    card_eval_status_text. To attribute the $ to the right joker we
+    --    push self onto a stack at the start of calculate_joker and pop
+    --    when it returns; ease_dollars then credits the joker on top of
+    --    the stack. ease_dollars calls outside any joker scope (rentals,
+    --    shop sells/buys, blind reward) are ignored — they're either
+    --    captured elsewhere (round_eval path) or aren't earnings.
+    earnings._joker_stack = {}
+    if Card and Card.calculate_joker then
+        local _orig = Card.calculate_joker
+        Card.calculate_joker = function(self, context) ---@diagnostic disable-line: duplicate-set-field
+            table.insert(earnings._joker_stack, self)
+            local ok, a, b = pcall(_orig, self, context)
+            table.remove(earnings._joker_stack)
+            if not ok then error(a) end
+            return a, b
+        end
+    end
+    if type(ease_dollars) == "function" then
+        local _orig = ease_dollars
+        ease_dollars = function(mod, instant) ---@diagnostic disable-line: duplicate-set-field
+            local stack = earnings._joker_stack
+            local top = stack[#stack]
+            if top and mod and mod ~= 0 then
                 record({
                     source = "joker_trigger",
-                    dollars = amt,
-                    joker_key = joker_key(card),
+                    dollars = mod,
+                    joker_key = joker_key(top),
                     phase = "play",
                 })
             end
-            return _orig(card, eval_type, amt, percent, dir, extra)
+            return _orig(mod, instant)
         end
     end
 
