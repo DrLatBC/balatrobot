@@ -257,6 +257,25 @@ return {
 
       local pack_choices_before = G.GAME.pack_choices or 0
 
+      -- Pre-flight: defer to the game's own validation. Covers cases the
+      -- endpoint-level checks miss — e.g. Ectoplasm/Hex with zero editionless
+      -- jokers (card.lua:1798-1800), which otherwise crashes the game in a
+      -- delayed E_MANAGER event at card.lua:1734 trying to index a nil result
+      -- from pseudorandom_element({}).
+      if card.can_use_consumeable then
+        local usable_ok, usable = pcall(card.can_use_consumeable, card, true)
+        if usable_ok and usable == false then
+          send_response({
+            message = string.format(
+              "Card '%s' cannot be used in current state (game rejected via can_use_consumeable)",
+              card_key or card.ability and card.ability.name or "unknown"
+            ),
+            name = BB_ERROR_NAMES.NOT_ALLOWED,
+          })
+          return true
+        end
+      end
+
       selection_in_progress = true
       -- Wrap use_card in pcall: if the game rejects the selection (e.g. Hex
       -- with no editionless jokers, Ankh with no jokers), the completion
