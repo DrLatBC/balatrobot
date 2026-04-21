@@ -114,8 +114,13 @@ return {
       return
     end
 
-    -- Block re-entrant calls while a previous selection is processing
-    if selection_in_progress then
+    -- Block re-entrant calls while a previous selection is processing.
+    -- Skip bypasses the guard — it's the wedge-recovery path, and the skip
+    -- branch below clears selection_in_progress unconditionally before
+    -- calling skip_booster. Without this bypass a stuck guard (e.g. a
+    -- use_card error that never fires the completion event) wedges the
+    -- pack forever with no way for the bot to escape.
+    if selection_in_progress and not args.skip then
       send_response({
         message = "Pack selection already in progress",
         name = BB_ERROR_NAMES.NOT_ALLOWED,
@@ -253,7 +258,19 @@ return {
       local pack_choices_before = G.GAME.pack_choices or 0
 
       selection_in_progress = true
-      G.FUNCS.use_card(btn)
+      -- Wrap use_card in pcall: if the game rejects the selection (e.g. Hex
+      -- with no editionless jokers, Ankh with no jokers), the completion
+      -- event never fires and the guard would latch on forever. pcall ensures
+      -- we surface the error and release the guard so the bot can recover.
+      local ok, err = pcall(G.FUNCS.use_card, btn)
+      if not ok then
+        selection_in_progress = false
+        send_response({
+          message = "use_card failed: " .. tostring(err),
+          name = BB_ERROR_NAMES.INVALID_STATE,
+        })
+        return true
+      end
 
       -- Wait for action to complete - check pack_choices to determine expected state
       G.E_MANAGER:add_event(Event({
